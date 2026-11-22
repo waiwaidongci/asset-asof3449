@@ -20,6 +20,11 @@ def write_report(run_id, attempt, result):
         writer.writerow([safe_cell(result.get('note', ''))])
         for metric in result['metrics']:
             writer.writerow([safe_cell(metric['label']), safe_cell(metric['value']), safe_cell(metric.get('detail', ''))])
+        # 认领依据与挂起交接单随结果导出，便于交付时回查当时的换标单版本。
+        relabel = result.get('relabel') or {}
+        if relabel.get('sheet_id') or relabel.get('name'):
+            writer.writerow([])
+            writer.writerow(['换标单版本', safe_cell(relabel.get('name')), safe_cell(relabel.get('checksum'))])
         for table in result['tables']:
             writer.writerow([])
             writer.writerow([safe_cell(table['title'])])

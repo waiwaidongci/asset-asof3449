@@ -40,10 +40,16 @@ export async function results(route, refresh) {
     result.tables.map(item=>panel(item.title,table(item.columns,item.rows,{caption:item.title}))))
     : panel(job.name,pill(STATUS[job.status],job.status),p(job.error,'feedback'),link('返回调整参数',`#run/${job.dataset_id}`,{class:'quiet'}));
   const inputs = spec.params.map(param=>el('div',{},el('dt',{},param.label),el('dd',{},value(job.params[param.key]))));
+  const version = job.relabel;
+  const sourcePanel = panel('运行来源', history,
+    source && link(source.name,`#inputs/${source.id}`),p(date(job.finished_at),'subtle'),
+    el('dl',{class:'dictionary'},inputs),
+    el('div',{},el('dt',{},'换标单版本'),el('dd',{},version
+      ? `${version.name} · 第 ${version.version} 版 · ${version.checksum.slice(0, 12)}`
+      : '未交换标单，按原始编号盘点')),
+    version && p('本次认领依据按发起时固定的版本计算；补正换标单会形成新版本，已出账结果不随之改变。','subtle'));
   return el('div',{},el('div',{class:'two-col'},el('div',{class:'wide-panel'},analysis),
-    el('aside',{class:'sidebar-panel'},panel('运行来源',history,
-      source && link(source.name,`#inputs/${source.id}`),p(date(job.finished_at),'subtle'),
-      el('dl',{class:'dictionary'},inputs)),
+    el('aside',{class:'sidebar-panel'},sourcePanel,
     result && panel(spec.decision, pill(REVIEW[job.review],job.review),
       link('打开复核记录',`#review/${job.id}`,{class:'quiet'})))));
 }

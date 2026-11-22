@@ -1,4 +1,4 @@
-import {datasetField, feedback, field} from '../components/common/fields.js';
+import {datasetField, feedback, field, relabelField} from '../components/common/fields.js';
 import {empty, panel, pill} from '../components/common/panels.js';
 import {table} from '../components/common/table.js';
 import {STATUS} from '../constants/enums.js';
@@ -9,12 +9,14 @@ import {button, el, link, p} from '../utils/dom.js';
 import {date} from '../utils/format.js';
 
 function runRequest(data, spec) {
+  const sheet = data.get('relabel_sheet_id');
   return {dataset_id:Number(data.get('dataset_id')),name:data.get('name'),
+    relabel_sheet_id:sheet ? Number(sheet) : null,
     params:Object.fromEntries(spec.params.map(param=>[param.key,data.get(param.key)]))};
 }
 
 export async function runPage(route, refresh) {
-  const {spec,datasets,runs} = workspace;
+  const {spec,datasets,relabels,runs} = workspace;
   const scheduling = spec.scheduled && route.scheduling;
   const plans = scheduling ? await workspace.schedules() : [];
   const error = feedback();
@@ -22,7 +24,7 @@ export async function runPage(route, refresh) {
   const plan = button('保存定时计划',{type:'button',class:'primary','data-testid':'save-schedule'});
   const scheduleFields = scheduling && session.canReview && el('details',{class:'schedule-fields'},
     el('summary',{},'定时站内分发'),
-    p('单次执行锁定所选批次。每日计划读取最新导入的批次，报告日逐日推进。通过发布门槛后进入站内收件箱。','subtle'),
+    p('单次执行锁定所选批次与换标单版本。每日计划读取最新导入的批次，报告日逐日推进。通过发布门槛后进入站内收件箱。','subtle'),
     field({key:'recipient',label:'收件团队',type:'string',required:false,max_length:100}),
     field({key:'first_at',label:'首次执行时间（北京时间）',type:'datetime-local',required:false}),
     el('label',{class:'check'},el('input',{name:'repeat_daily',type:'checkbox'}),'每日同一时间运行'), plan);
@@ -30,7 +32,8 @@ export async function runPage(route, refresh) {
     onSubmit:handler(submit,error,async event=>{
       const item = await workspace.start(runRequest(new FormData(event.target),spec));
       location.hash = `#results/${item.id}`;
-    })}, datasetField(datasets,route.id),field({key:'name',label:'运行名称',type:'string',max_length:120},`样本${spec.run}`),
+    })}, datasetField(datasets,route.id),relabelField(relabels,route.sheet),
+    field({key:'name',label:'运行名称',type:'string',max_length:120},`样本${spec.run}`),
     el('div',{class:'form-grid'},spec.params.map(param=>field(param))),el('div',{class:'actions'},submit),scheduleFields,error);
   plan.addEventListener('click',handler(plan,error,async()=>{
     if (!form.reportValidity()) return;
@@ -43,6 +46,7 @@ export async function runPage(route, refresh) {
   const runList = table([
     {label:'运行',render:item=>link(item.name,`#results/${item.id}`)},
     {label:'状态',render:item=>pill(STATUS[item.status],item.status)},
+    {label:'换标单版本',render:item=>item.relabel_sheet_id ? '已固定' : '未使用'},
     {label:'时间',render:item=>date(item.created_at)},
   ],runs,{caption:'运行记录',empty:'首次运行后将在此显示后台状态。'});
   const scheduleList = scheduling && panel('定时计划',table([

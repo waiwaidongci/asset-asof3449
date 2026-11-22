@@ -7,7 +7,7 @@ from src.constants.enums import Role
 from src.controllers.auth import allow, current
 from src.models.identity import User
 from src.models.jobs import Delivery, Schedule
-from src.models.source import Dataset
+from src.models.source import Dataset, RelabelSheet
 from src.schemas.requests import ScheduleRequest
 from src.services.audit import record
 from src.services.validation import normalize_params
@@ -27,17 +27,24 @@ def schedules(db: Session = Depends(connection), actor: User = Depends(current))
 def add(body: ScheduleRequest, db: Session = Depends(connection), actor: User = Depends(allow(Role.ADMIN))):
     if not db.get(Dataset, body.dataset_id):
         raise HTTPException(404, '找不到指定的数据批次')
+    sheet = None
+    if body.relabel_sheet_id is not None:
+        sheet = db.get(RelabelSheet, body.relabel_sheet_id)
+        if not sheet:
+            raise HTTPException(404, '找不到指定的换标单版本')
     if body.first_at.utcoffset() is None:
         raise ValueError('首次运行时间需要明确时区')
     first = body.first_at.astimezone(UTC).replace(tzinfo=None)
     stamp = now()
     if first < stamp - timedelta(seconds=30) or first > stamp + timedelta(days=366):
         raise ValueError('请选择从现在起一年内的首次运行时间')
-    item = Schedule(dataset_id=body.dataset_id, params=normalize_params(body.params), name=body.name,
+    item = Schedule(dataset_id=body.dataset_id, relabel_sheet_id=sheet.id if sheet else None,
+                    params=normalize_params(body.params), name=body.name,
                     recipient=body.recipient, next_at=first, repeat_daily=body.repeat_daily, author=actor.username)
     db.add(item)
     db.flush()
-    record(db, actor.username, 'schedule.created', item.id, recipient=item.recipient)
+    record(db, actor.username, 'schedule.created', item.id, recipient=item.recipient,
+           relabel_sheet_id=item.relabel_sheet_id)
     db.commit()
     wake()
     return views.schedule(item)

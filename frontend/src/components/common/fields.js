@@ -20,4 +20,13 @@ export function datasetField(datasets, selected) {
       el('option', {value:item.id, selected:String(item.id) === String(selected)}, `${item.name} · ${item.row_count} 行`))));
 }
 
+export function relabelField(sheets, selected) {
+  return el('label', {for:'relabel-sheet-id', class:'field'}, el('span', {}, '换标单版本（可选）'),
+    el('select', {id:'relabel-sheet-id', name:'relabel_sheet_id'},
+      el('option', {value:'', selected:selected == null}, '不交换标单，按原始编号盘点'),
+      sheets.map(sheet => el('option', {value:sheet.id, selected:String(sheet.id) === String(selected)},
+        `${sheet.name} · 第 ${sheet.version} 版 · ${sheet.row_count} 行 · ${sheet.checksum.slice(0, 8)}`))),
+    el('small', {}, '运行从排队到出账都认发起时固定的版本；补正换标单会形成新版本，已排队的运行不受影响。'));
+}
+
 export const feedback = () => el('p', {class:'feedback', 'aria-live':'polite', 'data-testid':'feedback'});

@@ -9,7 +9,7 @@ from src.controllers.auth import allow, current
 from src.domain.spec import SPEC
 from src.models.identity import User
 from src.models.jobs import Run
-from src.models.source import Dataset
+from src.models.source import Dataset, RelabelSheet
 from src.schemas.requests import ReviewRequest, RunRequest
 from src.services.audit import record
 from src.services.validation import normalize_params
@@ -26,6 +26,15 @@ def require_job(db, run_id, lock=False):
     return item
 
 
+def require_relabel(db, sheet_id):
+    if sheet_id is None:
+        return None
+    sheet = db.get(RelabelSheet, sheet_id)
+    if not sheet:
+        raise HTTPException(404, '找不到指定的换标单版本')
+    return sheet
+
+
 @router.get('')
 def index(db: Session = Depends(connection), actor: User = Depends(current)):
     return [views.run(item) for item in db.scalars(select(Run).order_by(Run.id.desc()).limit(100))]
@@ -36,10 +45,13 @@ def create(body: RunRequest, db: Session = Depends(connection),
            actor: User = Depends(allow(Role.ADMIN, Role.ANALYST))):
     if not db.get(Dataset, body.dataset_id):
         raise HTTPException(404, '找不到指定的数据批次')
-    item = Run(name=body.name, dataset_id=body.dataset_id, params=normalize_params(body.params), author=actor.username)
+    sheet = require_relabel(db, body.relabel_sheet_id)
+    item = Run(name=body.name, dataset_id=body.dataset_id, relabel_sheet_id=sheet.id if sheet else None,
+               params=normalize_params(body.params), author=actor.username)
     db.add(item)
     db.flush()
-    record(db, actor.username, 'analysis.queued', item.id, dataset_id=item.dataset_id)
+    record(db, actor.username, 'analysis.queued', item.id, dataset_id=item.dataset_id,
+           relabel_sheet_id=item.relabel_sheet_id)
     db.commit()
     wake()
     return views.run(item, detail=True)

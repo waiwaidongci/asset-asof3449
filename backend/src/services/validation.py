@@ -44,32 +44,41 @@ def cell(field, raw):
     return value
 
 
-def parse_rows(text):
-    reader = csv.DictReader(io.StringIO(text.removeprefix('\ufeff'), newline=''), strict=True)
-    fields = SPEC['fields']
+def _parse_table(text, fields, *, max_rows, table_name):
+    reader = csv.DictReader(io.StringIO(text.removeprefix('﻿'), newline=''), strict=True)
     keys = {field['key'] for field in fields}
     required = {field['key'] for field in fields if field.get('required', True)}
     rows = []
     try:
         headers = reader.fieldnames or []
         if not required <= set(headers) or not set(headers) <= keys or len(headers) != len(set(headers)):
-            raise ValueError('CSV 表头与字段说明不符，请下载模板检查列名')
+            raise ValueError(f'{table_name}表头与字段说明不符，请下载模板检查列名')
         for raw in reader:
-            if len(rows) >= 5000:
-                raise ValueError('一个数据批次最多导入 5000 行')
+            if len(rows) >= max_rows:
+                raise ValueError(f'一个{table_name}批次最多导入 {max_rows} 行')
             try:
                 if None in raw or any(value is None for value in raw.values()):
                     raise ValueError('工作表的列数与表头不一致')
                 rows.append({field['key']: cell(field, raw.get(field['key'])) for field in fields})
             except ValueError as error:
-                raise ValueError(f'CSV 第 {reader.line_num} 行 · {error}') from None
+                raise ValueError(f'{table_name} CSV 第 {reader.line_num} 行 · {error}') from None
     except csv.Error:
-        raise ValueError(f'CSV 第 {reader.line_num} 行附近格式不正确') from None
+        raise ValueError(f'{table_name} CSV 第 {reader.line_num} 行附近格式不正确') from None
     if not rows:
-        raise ValueError('CSV 至少需要一行有效数据')
+        raise ValueError(f'{table_name} CSV 至少需要一行有效数据')
+    return rows
+
+
+def parse_rows(text):
+    rows = _parse_table(text, SPEC['fields'], max_rows=5000, table_name='交接事件')
     if hasattr(analysis, 'validate_rows'):
         analysis.validate_rows(rows)
     return rows
+
+
+def parse_relabel_rows(text):
+    rows = _parse_table(text, SPEC['relabel']['fields'], max_rows=5000, table_name='换标单')
+    return analysis.validate_relabel_rows(rows)
 
 
 def normalize_params(params):

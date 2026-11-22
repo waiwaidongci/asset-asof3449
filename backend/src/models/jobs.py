@@ -1,8 +1,9 @@
 from datetime import datetime
 from sqlalchemy import JSON, ForeignKey, String, UniqueConstraint
-from sqlalchemy.orm import Mapped, mapped_column
+from sqlalchemy.orm import Mapped, mapped_column, relationship
 from src.config.database import Base
 from src.constants.enums import Review, Status
+from src.models.source import RelabelSheet
 from src.utils.time import now
 
 class Schedule(Base):
@@ -11,6 +12,8 @@ class Schedule(Base):
     id: Mapped[int] = mapped_column(primary_key=True)
     name: Mapped[str] = mapped_column(String(120))
     dataset_id: Mapped[int] = mapped_column(ForeignKey('datasets.id'))
+    relabel_sheet_id: Mapped[int | None] = mapped_column(ForeignKey('relabel_sheets.id'))
+    relabel_sheet: Mapped[RelabelSheet | None] = relationship()
     params: Mapped[dict] = mapped_column(JSON)
     recipient: Mapped[str] = mapped_column(String(100))
     next_at: Mapped[datetime] = mapped_column(index=True)
@@ -24,6 +27,8 @@ class Run(Base):
 
     id: Mapped[int] = mapped_column(primary_key=True)
     dataset_id: Mapped[int] = mapped_column(ForeignKey('datasets.id'))
+    relabel_sheet_id: Mapped[int | None] = mapped_column(ForeignKey('relabel_sheets.id'))
+    relabel_sheet: Mapped[RelabelSheet | None] = relationship()
     schedule_id: Mapped[int | None] = mapped_column(ForeignKey('schedules.id'))
     scheduled_at: Mapped[datetime | None]
     name: Mapped[str] = mapped_column(String(120))

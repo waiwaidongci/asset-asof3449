@@ -6,7 +6,7 @@ from src.constants.enums import Status
 from src.domain.analysis import analyze
 from src.domain.spec import SPEC
 from src.models.jobs import Delivery, Run, Schedule
-from src.models.source import Dataset
+from src.models.source import Dataset, RelabelSheet
 from src.services.audit import record
 from src.utils.exports import write_report
 from src.utils.time import now
@@ -36,8 +36,20 @@ def materialize_due():
                 item.next_at = due + timedelta(days=1)
             else:
                 item.enabled = False
-            db.add(Run(dataset_id=dataset_id, schedule_id=item.id, scheduled_at=due,
-                       name=item.name, params=params, author=item.author))
+            db.add(Run(dataset_id=dataset_id, relabel_sheet_id=item.relabel_sheet_id, schedule_id=item.id,
+                       scheduled_at=due, name=item.name, params=params, author=item.author))
+
+
+def _relabel_version(db, run):
+    """运行在发起时固定换标单版本；后台只读取该版本，补正后形成新版本不影响已排队运行。"""
+    if not run.relabel_sheet_id:
+        return None, None
+    sheet = db.get(RelabelSheet, run.relabel_sheet_id)
+    if sheet is None:
+        raise ValueError('发起时选择的换标单版本已不可用，请补正后发起新的盘点')
+    source = {'sheet_id': sheet.id, 'name': f'{sheet.name} 第 {sheet.version} 版',
+              'checksum': sheet.checksum, 'version': sheet.version}
+    return sheet.rows, source
 
 
 def claim():
@@ -58,14 +70,23 @@ def claim():
         job.attempt += 1
         job.lease_until = stamp + timedelta(minutes=3)
         records = db.get(Dataset, job.dataset_id).rows
-        return job.id, job.attempt, records, job.params
+        try:
+            relabel_rows, relabel_source = _relabel_version(db, job)
+        except ValueError as error:
+            job.status = Status.FAILED
+            job.error = str(error)[:500]
+            job.finished_at = stamp
+            job.lease_until = None
+            record(db, 'worker', 'analysis.failed', job.id, reason=job.error)
+            return None
+        return job.id, job.attempt, records, job.params, relabel_rows, relabel_source
 
 
 def execute(lease):
-    job_id, attempt, rows, params = lease
+    job_id, attempt, rows, params, relabel_rows, relabel_source = lease
     result = export = failure = None
     try:
-        result = analyze(rows, params)
+        result = analyze(rows, params, relabel_rows, relabel_source)
         export = write_report(job_id, attempt, result)
     except ValueError as error:
         failure = str(error)[:500]
